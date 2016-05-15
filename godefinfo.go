@@ -268,7 +268,12 @@ func deepRecvType(sel *types.Selection) types.Type {
 	idx := sel.Index()
 	for k, i := range idx[:len(idx)-offset] {
 		final := k == len(idx)-offset-1
-		typ = getMethod(typ, i, final, sel.Kind() != types.FieldVal).Type()
+		t := getMethod(typ, i, final, sel.Kind() != types.FieldVal)
+		if t == nil {
+			dlog.Printf("failed to get method/field at index %v on recv %s", idx, typ)
+			return nil
+		}
+		typ = t.Type()
 	}
 	return typ
 }
@@ -288,8 +293,6 @@ func getMethod(typ types.Type, idx int, final bool, method bool) (obj types.Obje
 	case *types.Named:
 		if final && method {
 			switch obj2 := dereferenceType(obj.Underlying()).(type) {
-			case *types.Struct:
-				return obj.Method(idx).Type().(*types.Signature).Recv()
 			case *types.Interface:
 				recvObj := obj2.Method(idx).Type().(*types.Signature).Recv()
 				if recvObj.Type() == obj.Underlying() {
@@ -297,6 +300,7 @@ func getMethod(typ types.Type, idx int, final bool, method bool) (obj types.Obje
 				}
 				return recvObj
 			}
+			return obj.Method(idx).Type().(*types.Signature).Recv()
 		}
 		return getMethod(obj.Underlying(), idx, final, method)
 

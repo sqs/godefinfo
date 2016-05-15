@@ -89,6 +89,9 @@ func init() {
 
 	x, err := http.Get("http://example.com")
 	x.Body // net/http Response Body
+
+	w := http.ResponseWriter(nil)
+	w.Header().Set // net/http Header Set
 }
 
 func F() {}
@@ -176,7 +179,7 @@ func TestGOPATH(t *testing.T) {
 }
 
 func testFile(t *testing.T, filename, src string) {
-	pat := regexp.MustCompile(`(?:\t|\.)(?P<ref>\w+)\s*// (?P<pkg>[\w/.-]+)(?: (?P<name1>\w+)(?: (?P<name2>\w+))?)?`)
+	pat := regexp.MustCompile(`(?:\t|\.)(?P<ref>[()\w]+)\s*// (?P<pkg>[\w/.-]+)(?: (?P<name1>\w+)(?: (?P<name2>\w+))?)?`)
 	matches := pat.FindAllStringSubmatchIndex(src, -1)
 	if numTests := strings.Count(src, " // "); len(matches) != numTests {
 		t.Fatalf("%s: source has %d tests (lines with ' // '), but %d matches found (regexp probably needs to be updated to include new styles of test specifications)", filename, numTests, len(matches))
