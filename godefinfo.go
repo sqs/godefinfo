@@ -131,7 +131,7 @@ repeat:
 		dlog.Println(err)
 	}
 
-	pos := token.Pos(*offset) + 1 // 1-indexed (because 0 Pos is invalid)
+	pos := token.Pos(*offset)
 	nodes, _ := pathEnclosingInterval(pkgFiles[0], pos, pos)
 
 	// Handle import statements.
