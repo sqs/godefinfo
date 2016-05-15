@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -11,20 +12,36 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime/pprof"
 	"sort"
+	"strings"
+	"time"
 )
 
 var (
 	readStdin = flag.Bool("i", false, "read file from stdin")
 	offset    = flag.Int("o", -1, "file offset of identifier in stdin")
 	debug     = flag.Bool("debug", false, "debug mode")
+	strict    = flag.Bool("strict", false, "strict mode (all warnings are fatal)")
 	filename  = flag.String("f", "", "Go source filename")
+	gobuild   = flag.Bool("gobuild", false, "automatically run `go build -i` on the filename to rebuild deps (necessary for cross-package lookups)")
+	importsrc = flag.Bool("importsrc", false, "import external Go packages from source (can be slower than -gobuild)")
+
+	cpuprofile  = flag.String("debug.cpuprofile", "", "write CPU profile to this file")
+	repetitions = flag.Int("debug.repetitions", 1, "repeat this many times to generate better profiles")
 )
 
 var (
-	fset = token.NewFileSet()
+	fset *token.FileSet
 	dlog *log.Logger
 )
+
+func ignoreError(err error) bool {
+	// don't treat "value of ____ is not used" as fatal
+	return err == nil || strings.Contains(err.Error(), "is not used")
+}
 
 func main() {
 	flag.Usage = func() {
@@ -37,6 +54,18 @@ func main() {
 		os.Exit(2)
 	}
 
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+repeat:
+	fset = token.NewFileSet()
+
 	if *debug {
 		dlog = log.New(os.Stderr, "[debug] ", 0)
 	} else {
@@ -46,21 +75,46 @@ func main() {
 
 	var src []byte
 	if *readStdin {
-		src, _ = ioutil.ReadAll(os.Stdin)
-	} else {
-		b, err := ioutil.ReadFile(*filename)
+		var err error
+		src, err = ioutil.ReadAll(os.Stdin)
 		if err != nil {
 			log.Fatal(err)
 		}
-		src = b
 	}
-	f, err := parser.ParseFile(fset, *filename, src, 0)
-	if f == nil {
+
+	pkgFiles, err := parsePackage(*filename, src)
+	if err != nil {
 		log.Fatal(err)
 	}
 
+	var importPath string
+	if *filename != "" {
+		buildPkg, err := build.ImportDir(filepath.Dir(*filename), build.FindOnly|build.AllowBinary)
+		if err != nil {
+			dlog.Println("build.ImportDir:", err)
+		}
+		importPath = buildPkg.ImportPath
+	}
+
+	if *gobuild {
+		t1 := time.Now()
+		if importPath != "" {
+			// Generates the .a files that the importer.Default() must
+			// have to import other packages.
+			if err := exec.Command("go", "build", "-i", importPath).Run(); err != nil {
+				dlog.Println("go build:", err)
+			}
+			dlog.Println("go build took", time.Since(t1))
+		}
+	}
+
+	if importPath == "" || importPath == "." {
+		importPath = pkgFiles[0].Name.Name
+	}
+
 	conf := types.Config{
-		Importer:                 importer.Default(),
+		Importer:                 makeImporter(),
+		FakeImportC:              true,
 		DisableUnusedImportCheck: true,
 		Error: func(error) {},
 	}
@@ -68,13 +122,16 @@ func main() {
 		Uses:       map[*ast.Ident]types.Object{},
 		Selections: map[*ast.SelectorExpr]*types.Selection{},
 	}
-	pkg, err := conf.Check(f.Name.Name, fset, []*ast.File{f}, &info)
-	if err != nil {
+	pkg, err := conf.Check(importPath, fset, pkgFiles, &info)
+	if err != nil && !ignoreError(err) {
+		if *strict {
+			log.Fatal(err)
+		}
 		dlog.Println(err)
 	}
 
 	pos := token.Pos(*offset) + 1 // 1-indexed (because 0 Pos is invalid)
-	nodes, _ := pathEnclosingInterval(f, pos, pos)
+	nodes, _ := pathEnclosingInterval(pkgFiles[0], pos, pos)
 
 	var identX *ast.Ident
 	var selX *ast.SelectorExpr
@@ -97,10 +154,7 @@ func main() {
 	}
 	if pkgName, ok := obj.(*types.PkgName); ok {
 		fmt.Println(pkgName.Imported().Path())
-		return
-	}
-
-	if selX == nil {
+	} else if selX == nil {
 		if pkg.Scope().Lookup(identX.Name) == obj {
 			fmt.Println(objectString(obj))
 		} else if types.Universe.Lookup(identX.Name) == obj {
@@ -108,19 +162,7 @@ func main() {
 		} else {
 			log.Fatal("not a package-level definition")
 		}
-	} else {
-		sel, ok := info.Selections[selX]
-		if !ok {
-			// Qualified reference (to another package's top-level
-			// definition).
-			if obj := info.Uses[selX.Sel]; obj != nil {
-				fmt.Println(objectString(obj))
-				return
-			}
-
-			log.Fatal("no selector type")
-		}
-
+	} else if sel, ok := info.Selections[selX]; ok {
 		recv, ok := dereferenceType(deepRecvType(sel)).(*types.Named)
 		if !ok || recv == nil || recv.Obj() == nil || recv.Obj().Pkg() == nil || recv.Obj().Pkg().Scope().Lookup(recv.Obj().Name()) != recv.Obj() {
 			log.Fatal("receiver is not a top-level named type")
@@ -132,8 +174,68 @@ func main() {
 		}
 
 		fmt.Println(objectString(recv.Obj()), identX.Name)
-		return
+	} else {
+		// Qualified reference (to another package's top-level
+		// definition).
+		if obj := info.Uses[selX.Sel]; obj != nil {
+			fmt.Println(objectString(obj))
+		} else {
+			log.Fatal("no selector type")
+		}
 	}
+
+	if *repetitions > 1 {
+		*repetitions--
+		goto repeat
+	}
+}
+
+func parsePackage(filename string, src []byte) (files []*ast.File, err error) {
+	if src == nil {
+		src, err = ioutil.ReadFile(filename)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Treat an unrecoverable parse error on the primary file
+	// as fatal, but otherwise be tolerant of errors.
+	f, err := parser.ParseFile(fset, filename, src, 0)
+	if f == nil || (*strict && err != nil) {
+		return nil, err
+	}
+	files = append(files, f)
+
+	fileFilter := func(fi os.FileInfo) bool {
+		if !strings.HasSuffix(fi.Name(), ".go") {
+			return false
+		}
+
+		// We already parsed the primary file, so don't reparse it.
+		if fi.Name() == filepath.Base(filename) {
+			return false
+		}
+
+		// Include *_test.go files only if the primary file is a test file.
+		includeTestFiles := strings.HasSuffix(filename, "_test.go")
+		return includeTestFiles || !strings.HasSuffix(fi.Name(), "_test.go")
+	}
+
+	pkgs, err := parser.ParseDir(fset, filepath.Dir(filename), fileFilter, 0)
+	if err != nil {
+		if *strict {
+			return nil, err
+		}
+		dlog.Println(err)
+	}
+	for pkgName, pkg := range pkgs {
+		if pkgName == f.Name.Name {
+			for _, f := range pkg.Files {
+				files = append(files, f)
+			}
+		}
+	}
+	return files, nil
 }
 
 // deepRecvType gets the embedded struct's name that the method or
@@ -198,6 +300,92 @@ func objectString(obj types.Object) string {
 		return fmt.Sprintf("%s %s", obj.Pkg().Path(), obj.Name())
 	}
 	return obj.Name()
+}
+
+var systemImp = importer.Default()
+
+func makeImporter() types.Importer {
+	imp := systemImp
+	if !*importsrc {
+		return imp
+	}
+
+	if imp, ok := imp.(types.ImporterFrom); ok {
+		return &sourceImporterFrom{
+			ImporterFrom: imp,
+			cached:       map[importerPkgKey]*types.Package{},
+		}
+	}
+	return imp
+}
+
+type importerPkgKey struct{ path, srcDir string }
+
+type sourceImporterFrom struct {
+	types.ImporterFrom
+
+	cached map[importerPkgKey]*types.Package
+}
+
+func (s *sourceImporterFrom) Import(path string) (*types.Package, error) {
+	return s.ImportFrom(path, "" /* no vendoring */, 0)
+}
+
+var _ (types.ImporterFrom) = (*sourceImporterFrom)(nil)
+
+func (s *sourceImporterFrom) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
+	pkg, err := s.ImporterFrom.ImportFrom(path, srcDir, mode)
+	if pkg != nil {
+		return pkg, err
+	}
+
+	key := importerPkgKey{path, srcDir}
+	if pkg := s.cached[key]; pkg != nil && pkg.Complete() {
+		return pkg, nil
+	}
+
+	if *debug {
+		t0 := time.Now()
+		defer func() {
+			dlog.Printf("source import of %s took %s", path, time.Since(t0))
+		}()
+	}
+
+	// Otherwise, parse from source.
+	pkgs, err := parser.ParseDir(fset, srcDir, func(fi os.FileInfo) bool {
+		return strings.HasSuffix(fi.Name(), ".go") && !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		return nil, err
+	}
+	var astPkg *ast.Package
+	for pkgName, pkg := range pkgs {
+		if pkgName != "main" && !strings.HasSuffix(pkgName, "_test") {
+			astPkg = pkg
+			break
+		}
+	}
+	if astPkg == nil {
+		return nil, fmt.Errorf("ImportFrom: no suitable package found (import path %q, dir %q)", path, srcDir)
+	}
+
+	pkgFiles := make([]*ast.File, 0, len(astPkg.Files))
+	for _, f := range astPkg.Files {
+		pkgFiles = append(pkgFiles, f)
+	}
+
+	conf := types.Config{
+		Importer:                 systemImp,
+		FakeImportC:              true,
+		IgnoreFuncBodies:         true,
+		DisableUnusedImportCheck: true,
+		Error: func(error) {},
+	}
+	pkg, err = conf.Check(path, fset, pkgFiles, nil)
+	if pkg != nil {
+		s.cached[key] = pkg
+	}
+	return pkg, err
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -3,9 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/build"
 	"io/ioutil"
+	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,7 +18,18 @@ import (
 
 var writeGoFile = flag.Bool("test.write-go-file", false, "write the test .go file to disk for easier debugging (run with -test.v to see filename)")
 
-func TestGodefinfo(t *testing.T) {
+func init() {
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	build.Default.GOPATH = filepath.Join(dir, "testdata")
+	minimalEnv = []string{"GOPATH=" + build.Default.GOPATH, "GOROOT=" + runtime.GOROOT()}
+}
+
+var minimalEnv []string
+
+func TestSingleFile(t *testing.T) {
 	const src = `package p
 
 import "net/http"
@@ -130,10 +146,40 @@ type L interface {
 		t.Log("wrote test file to", filename)
 	}
 
-	pat := regexp.MustCompile(`(?:\t|\.)(?P<ref>\w+) // (?P<pkg>[\w/.-]+)(?: (?P<name1>\w+)(?: (?P<name2>\w+))?)?`)
+	testFile(t, filename, src)
+}
+
+func TestGOPATH(t *testing.T) {
+	cmd := exec.Command("go", "install", "mypkg/subpkg")
+	cmd.Env = minimalEnv
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go build mypkg/subpkg failed: %s (output follows)\n\n%s", err, out)
+	}
+
+	filenames := []string{
+		"mypkg/a.go",
+		"mypkg/b.go",
+		"mypkg/subpkg/c.go",
+	}
+	for _, filename := range filenames {
+		filename, err := filepath.Abs(filepath.Join("testdata/src", filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		src, err := ioutil.ReadFile(filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testFile(t, filename, string(src))
+	}
+}
+
+func testFile(t *testing.T, filename, src string) {
+	pat := regexp.MustCompile(`(?:\t|\.)(?P<ref>\w+)\s*// (?P<pkg>[\w/.-]+)(?: (?P<name1>\w+)(?: (?P<name2>\w+))?)?`)
 	matches := pat.FindAllStringSubmatchIndex(src, -1)
 	if numTests := strings.Count(src, " // "); len(matches) != numTests {
-		t.Fatalf("source has %d tests (lines with ' // '), but %d matches found (regexp probably needs to be updated to include new styles of test specifications)", numTests, len(matches))
+		t.Fatalf("%s: source has %d tests (lines with ' // '), but %d matches found (regexp probably needs to be updated to include new styles of test specifications)", filename, numTests, len(matches))
 	}
 	for _, m := range matches {
 		ref := src[m[2]:m[3]]
@@ -146,7 +192,7 @@ type L interface {
 			wantName2 = src[m[8]:m[9]]
 		}
 
-		label := fmt.Sprintf("ref %q at offset %d", ref, m[2])
+		label := fmt.Sprintf("%s: ref %q at offset %d", filename, ref, m[2])
 
 		var out string
 		pkg, name1, name2, err := check(filename, src, m[2], &out)
@@ -170,7 +216,8 @@ type L interface {
 }
 
 func check(filename, src string, offset int, saveOutput *string) (pkg, name1, name2 string, err error) {
-	cmd := exec.Command("godefinfo", "-i", "-o", strconv.Itoa(offset), "-f", filename)
+	cmd := exec.Command("godefinfo", "-i", "-o", strconv.Itoa(offset), "-f", filename, "-strict", "-importsrc")
+	cmd.Env = minimalEnv
 	cmd.Stdin = ioutil.NopCloser(strings.NewReader(src))
 	outB, err := cmd.CombinedOutput()
 	if err != nil {
