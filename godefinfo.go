@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -132,6 +133,21 @@ repeat:
 
 	pos := token.Pos(*offset) + 1 // 1-indexed (because 0 Pos is invalid)
 	nodes, _ := pathEnclosingInterval(pkgFiles[0], pos, pos)
+
+	// Handle import statements.
+	//
+	// TODO(sqs): fix this control flow so that the -debug.repetitions
+	// flag causes this code path to repeat as well.
+	if len(nodes) > 2 {
+		if im, ok := nodes[1].(*ast.ImportSpec); ok {
+			pkgPath, err := strconv.Unquote(im.Path.Value)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Println(pkgPath)
+			return
+		}
+	}
 
 	var identX *ast.Ident
 	var selX *ast.SelectorExpr
