@@ -182,8 +182,8 @@ func testFile(t *testing.T, filename, src string) {
 		t.Fatalf("%s: source has %d tests (lines with ' // '), but %d matches found (regexp probably needs to be updated to include new styles of test specifications)", filename, numTests, len(matches))
 	}
 	for _, m := range matches {
-		m[2]++
 		ref := src[m[2]:m[3]]
+		m[2]++
 		wantPkg := src[m[4]:m[5]]
 		var wantName1, wantName2 string
 		if m[6] != -1 {
