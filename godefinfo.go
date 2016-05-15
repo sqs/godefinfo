@@ -92,6 +92,9 @@ func main() {
 	}
 
 	obj := info.Uses[identX]
+	if obj == nil {
+		log.Fatalf("no type information for identifier %q at %d", identX.Name, *offset)
+	}
 	if pkgName, ok := obj.(*types.PkgName); ok {
 		fmt.Println(pkgName.Imported().Path())
 		return
