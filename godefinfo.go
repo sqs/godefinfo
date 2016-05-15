@@ -27,7 +27,7 @@ var (
 	strict    = flag.Bool("strict", false, "strict mode (all warnings are fatal)")
 	filename  = flag.String("f", "", "Go source filename")
 	gobuild   = flag.Bool("gobuild", false, "automatically run `go build -i` on the filename to rebuild deps (necessary for cross-package lookups)")
-	importsrc = flag.Bool("importsrc", false, "import external Go packages from source (can be slower than -gobuild)")
+	importsrc = flag.Bool("importsrc", true, "import external Go packages from source (can be slower than -gobuild)")
 
 	cpuprofile  = flag.String("debug.cpuprofile", "", "write CPU profile to this file")
 	repetitions = flag.Int("debug.repetitions", 1, "repeat this many times to generate better profiles")
