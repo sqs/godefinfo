@@ -170,7 +170,7 @@ type L interface {
 }
 
 func check(filename, src string, offset int, saveOutput *string) (pkg, name1, name2 string, err error) {
-	cmd := exec.Command("godef2", "-i", "-o", strconv.Itoa(offset), "-f", filename)
+	cmd := exec.Command("godefinfo", "-i", "-o", strconv.Itoa(offset), "-f", filename)
 	cmd.Stdin = ioutil.NopCloser(strings.NewReader(src))
 	outB, err := cmd.CombinedOutput()
 	if err != nil {
