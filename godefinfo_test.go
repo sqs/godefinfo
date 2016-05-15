@@ -13,7 +13,7 @@ import (
 
 var writeGoFile = flag.Bool("test.write-go-file", false, "write the test .go file to disk for easier debugging (run with -test.v to see filename)")
 
-func TestGodef(t *testing.T) {
+func TestGodefinfo(t *testing.T) {
 	const src = `package p
 
 import "net/http"
