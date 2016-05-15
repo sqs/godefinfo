@@ -57,4 +57,11 @@ GOPATH=/tmp/MYTEMPDIR GOBIN=/tmp/MAYBE-A-DIR-IN-YOUR-EDITOR-PLUGIN-DATA-DIR go g
 rm -rf /tmp/MYTEMPDIR # no need to keep the source code around
 ```
 
-Then the godefinfo program will be available at `/tmp/MAYBE-A-DIR-IN-YOUR-EDITOR-PLUGIN-DATA-DIR/godefinfo`.
+You can also install without needing `git` or to clone the whole repository:
+
+```
+curl -sSL https://raw.githubusercontent.com/sqs/godefinfo/master/godefinfo.go > /tmp/godefinfo.go && go build -o /tmp/godefinfo /tmp/godefinfo.go
+rm -rf /tmp/godefinfo.go
+```
+
+Then the godefinfo program will be available at `/tmp/MAYBE-A-DIR-IN-YOUR-EDITOR-PLUGIN-DATA-DIR/godefinfo` or wherever you installed it.
