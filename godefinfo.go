@@ -29,6 +29,7 @@ var (
 	filename  = flag.String("f", "", "Go source filename")
 	gobuild   = flag.Bool("gobuild", false, "automatically run `go build -i` on the filename to rebuild deps (necessary for cross-package lookups)")
 	importsrc = flag.Bool("importsrc", true, "import external Go packages from source (can be slower than -gobuild)")
+	version   = flag.Bool("v", false, "version of godefinfo")
 
 	cpuprofile  = flag.String("debug.cpuprofile", "", "write CPU profile to this file")
 	repetitions = flag.Int("debug.repetitions", 1, "repeat this many times to generate better profiles")
@@ -53,6 +54,10 @@ func main() {
 	if flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(2)
+	}
+	if *version {
+		fmt.Printf("godefinfo version 0.1\n")
+		os.Exit(0)
 	}
 
 	if *cpuprofile != "" {
