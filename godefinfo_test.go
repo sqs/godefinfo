@@ -81,7 +81,7 @@ func init() {
 	error // builtin error
 	string // builtin string
 	make // builtin make
-	http // net/http
+	http //http: net/http
 	http.DefaultClient // net/http DefaultClient
 	http.DefaultClient.Transport // net/http Client Transport
 	http.DefaultClient.Transport.RoundTrip // net/http RoundTripper RoundTrip
@@ -94,13 +94,13 @@ func init() {
 	w.Header().Set // net/http Header Set
 }
 
-func F() {}
+func F() {} //F: p F
 
-type T struct {
-	F0 int
+type T struct { //T: p T
+	F0 int //F0: p T F0
 	S
 	*P
-	K
+	K //K: p T K
 }
 
 func (T) M0() {}
@@ -108,7 +108,7 @@ func (*T) M1() {}
 func (_ T) M2() {}
 func (_ *T) M3() {}
 func (t T) M4() {}
-func (t *T) M5() {}
+func (t *T) M5() {} //M5: p T M5
 
 type S struct { F1 int }
 
@@ -121,8 +121,8 @@ type P struct {
 
 func (P) M7() {}
 
-type I interface {
-	L
+type I interface { //I: p I
+	L //L: p L
 	M8()
 	J
 }
@@ -137,8 +137,12 @@ type K interface {
 
 type L interface {
 	M11()
-	M12()
+	M12() //M12: p L M12
 }
+
+var M = 1 //M: p M
+
+const N = 2 //N: p N
 `
 
 	const filename = "/tmp/godef_testdata.go"
@@ -179,21 +183,43 @@ func TestGOPATH(t *testing.T) {
 }
 
 func testFile(t *testing.T, filename, src string) {
-	pat := regexp.MustCompile(`(?:\t|\.)(?P<ref>[()\w]+)\s*// (?P<pkg>[\w/.-]+)(?: (?P<name1>\w+)(?: (?P<name2>\w+))?)?`)
+	pat := regexp.MustCompile(`\s*(?P<ref>.+)\s*//(?:(?P<tok>\w+):)? (?P<pkg>[\w/.-]+)(?: (?P<name1>\w+)(?: (?P<name2>\w+))?)?`)
 	matches := pat.FindAllStringSubmatchIndex(src, -1)
-	if numTests := strings.Count(src, " // "); len(matches) != numTests {
+	if numTests := strings.Count(src, " //"); len(matches) != numTests {
 		t.Fatalf("%s: source has %d tests (lines with ' // '), but %d matches found (regexp probably needs to be updated to include new styles of test specifications)", filename, numTests, len(matches))
 	}
 	for _, m := range matches {
 		ref := src[m[2]:m[3]]
-		m[2]++
-		wantPkg := src[m[4]:m[5]]
-		var wantName1, wantName2 string
-		if m[6] != -1 {
-			wantName1 = src[m[6]:m[7]]
+
+		// Narrow the ref if the tok is provided.
+		var tokIdxInRef, tokLen int
+		if m[4] == -1 {
+			// Take right-most component of dotted selector.
+			tokIdxInRef = strings.LastIndex(ref, ".")
+			if tokIdxInRef == -1 {
+				tokIdxInRef = 0
+			}
+			tokLen = len(ref) - tokIdxInRef
+		} else {
+			tok := src[m[4]:m[5]]
+			tokLen = len(tok)
+			tokIdxInRef = strings.Index(ref, tok)
+			if tokIdxInRef == -1 {
+				t.Errorf("%s: could not find token %q in ref %q", filename, tok, ref)
+				continue
+			}
 		}
+		ref = ref[tokIdxInRef : tokIdxInRef+tokLen]
+		m[2] += tokIdxInRef
+
+		m[2]++
+		wantPkg := src[m[6]:m[7]]
+		var wantName1, wantName2 string
 		if m[8] != -1 {
-			wantName2 = src[m[8]:m[9]]
+			wantName1 = src[m[8]:m[9]]
+		}
+		if m[10] != -1 {
+			wantName2 = src[m[10]:m[11]]
 		}
 
 		label := fmt.Sprintf("%s: ref %q at offset %d", filename, ref, m[2])

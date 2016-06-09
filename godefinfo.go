@@ -125,6 +125,7 @@ repeat:
 		Error: func(error) {},
 	}
 	info := types.Info{
+		Defs:       map[*ast.Ident]types.Object{},
 		Uses:       map[*ast.Ident]types.Object{},
 		Selections: map[*ast.SelectorExpr]*types.Selection{},
 	}
@@ -169,6 +170,37 @@ repeat:
 		}
 	}
 
+	if obj := info.Defs[identX]; obj != nil {
+		switch t := obj.Type().(type) {
+		case *types.Signature:
+			if t.Recv() == nil {
+				// Top-level func.
+				fmt.Println(objectString(obj))
+			} else {
+				// Method or interface method.
+				fmt.Println(obj.Pkg().Path(), dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name(), identX.Name)
+			}
+			return
+		}
+
+		if obj.Parent() == pkg.Scope() {
+			// Top-level package def.
+			fmt.Println(objectString(obj))
+			return
+		}
+
+		// Struct field.
+		if _, ok := nodes[1].(*ast.Field); ok {
+			if typ, ok := nodes[4].(*ast.TypeSpec); ok {
+				fmt.Println(obj.Pkg().Path(), typ.Name.Name, obj.Name())
+				return
+			}
+		}
+
+		log.Fatalf("unable to identify def (ident: %v, object: %v)", identX, obj)
+		return
+	}
+
 	obj := info.Uses[identX]
 	if obj == nil {
 		log.Fatalf("no type information for identifier %q at %d", identX.Name, *offset)
@@ -181,7 +213,7 @@ repeat:
 		} else if types.Universe.Lookup(identX.Name) == obj {
 			fmt.Println("builtin", obj.Name())
 		} else {
-			log.Fatal("not a package-level definition")
+			log.Fatalf("not a package-level definition (ident: %v, object: %v)", identX, obj)
 		}
 	} else if sel, ok := info.Selections[selX]; ok {
 		recv, ok := dereferenceType(deepRecvType(sel)).(*types.Named)
