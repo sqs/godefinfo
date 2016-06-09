@@ -197,6 +197,11 @@ repeat:
 			}
 		}
 
+		if pkg, name, ok := typeName(dereferenceType(obj.Type())); ok {
+			fmt.Println(pkg, name)
+			return
+		}
+
 		log.Fatalf("unable to identify def (ident: %v, object: %v)", identX, obj)
 		return
 	}
@@ -213,7 +218,13 @@ repeat:
 		} else if types.Universe.Lookup(identX.Name) == obj {
 			fmt.Println("builtin", obj.Name())
 		} else {
-			log.Fatalf("not a package-level definition (ident: %v, object: %v)", identX, obj)
+			t := dereferenceType(obj.Type())
+			if pkg, name, ok := typeName(t); ok {
+				fmt.Println(pkg, name)
+				return
+			}
+			log.Fatalf("not a package-level definition (ident: %v, object: %v) and unable to follow type (type: %v)", identX, obj, t)
+			return
 		}
 	} else if sel, ok := info.Selections[selX]; ok {
 		recv, ok := dereferenceType(deepRecvType(sel)).(*types.Named)
@@ -320,6 +331,16 @@ func dereferenceType(typ types.Type) types.Type {
 		return typ.Elem()
 	}
 	return typ
+}
+
+func typeName(typ types.Type) (pkg, name string, ok bool) {
+	switch typ := typ.(type) {
+	case *types.Named:
+		return typ.Obj().Pkg().Path(), typ.Obj().Name(), true
+	case *types.Basic:
+		return "builtin", typ.Name(), true
+	}
+	return "", "", false
 }
 
 func getMethod(typ types.Type, idx int, final bool, method bool) (obj types.Object) {

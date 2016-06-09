@@ -89,9 +89,17 @@ func init() {
 
 	x, err := http.Get("http://example.com")
 	x.Body // net/http Response Body
+	x //x: net/http Response
 
 	w := http.ResponseWriter(nil)
 	w.Header().Set // net/http Header Set
+	w //w: net/http ResponseWriter
+
+	y := 3 //y: builtin int
+	y // builtin int
+
+	z := T{} //z: p T
+	z // p T
 }
 
 func F() {} //F: p F
