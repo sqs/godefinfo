@@ -65,3 +65,7 @@ rm -rf /tmp/godefinfo.go
 ```
 
 Then the godefinfo program will be available at `/tmp/MAYBE-A-DIR-IN-YOUR-EDITOR-PLUGIN-DATA-DIR/godefinfo` or wherever you installed it.
+
+## Requirements
+
+* Go 1.6+ (otherwise it will fail with compilation error on `types.ImporterFrom`)
