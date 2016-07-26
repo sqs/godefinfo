@@ -240,8 +240,7 @@ repeat:
 				fmt.Println(pkg, name)
 				return
 			}
-			log.Fatalf("not a package-level definition (ident: %v, object: %v) and unable to follow type (type: %v)", identX, obj, t)
-			return
+			log.Fatal("method or field not found")
 		}
 
 		fmt.Println(objectString(recv.Obj()), identX.Name)
