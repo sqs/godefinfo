@@ -232,9 +232,16 @@ repeat:
 			log.Fatal("receiver is not a top-level named type")
 		}
 
-		obj, _, _ := types.LookupFieldOrMethod(sel.Recv(), true, pkg, identX.Name)
-		if obj == nil {
-			log.Fatal("method or field not found")
+		field, _, _ := types.LookupFieldOrMethod(sel.Recv(), true, pkg, identX.Name)
+		if field == nil {
+			// field invoked, but object is selected
+			t := dereferenceType(obj.Type())
+			if pkg, name, ok := typeName(t); ok {
+				fmt.Println(pkg, name)
+				return
+			}
+			log.Fatalf("not a package-level definition (ident: %v, object: %v) and unable to follow type (type: %v)", identX, obj, t)
+			return
 		}
 
 		fmt.Println(objectString(recv.Obj()), identX.Name)
