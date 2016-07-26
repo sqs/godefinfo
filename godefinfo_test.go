@@ -100,7 +100,7 @@ func init() {
 
 	z := T{} //z: p T
 	z // p T
-    z.M0 //z: p T
+	z.M0 //z: p T
 }
 
 func F() {} //F: p F
