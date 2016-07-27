@@ -100,6 +100,8 @@ func init() {
 
 	z := T{} //z: p T
 	z // p T
+	z.M0 //z: p T
+	T{F0: 1} //F0: p T F0
 }
 
 func F() {} //F: p F

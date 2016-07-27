@@ -210,6 +210,20 @@ repeat:
 	if obj == nil {
 		log.Fatalf("no type information for identifier %q at %d", identX.Name, *offset)
 	}
+
+	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
+		// Struct literal
+		if lit, ok := nodes[2].(*ast.CompositeLit); ok {
+			if parent, ok := lit.Type.(*ast.SelectorExpr); ok {
+				fmt.Println(obj.Pkg().Path(), parent.Sel, obj.Id())
+				return
+			} else if parent, ok := lit.Type.(*ast.Ident); ok {
+				fmt.Println(obj.Pkg().Path(), parent, obj.Id())
+				return
+			}
+		}
+	}
+
 	if pkgName, ok := obj.(*types.PkgName); ok {
 		fmt.Println(pkgName.Imported().Path())
 	} else if selX == nil {
@@ -232,8 +246,14 @@ repeat:
 			log.Fatal("receiver is not a top-level named type")
 		}
 
-		obj, _, _ := types.LookupFieldOrMethod(sel.Recv(), true, pkg, identX.Name)
-		if obj == nil {
+		field, _, _ := types.LookupFieldOrMethod(sel.Recv(), true, pkg, identX.Name)
+		if field == nil {
+			// field invoked, but object is selected
+			t := dereferenceType(obj.Type())
+			if pkg, name, ok := typeName(t); ok {
+				fmt.Println(pkg, name)
+				return
+			}
 			log.Fatal("method or field not found")
 		}
 
