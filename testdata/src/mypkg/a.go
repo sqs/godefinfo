@@ -20,6 +20,8 @@ func init() {
 	subpkg.C0        // mypkg/subpkg C0
 	(subpkg.C1{}).C2 // mypkg/subpkg C1 C2
 	strings.Contains // strings Contains
+
+	subpkg.C3{C4: subpkg.C1} //C4: mypkg/subpkg C3 C4
 }
 
 func A0() {}

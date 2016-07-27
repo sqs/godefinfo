@@ -210,6 +210,20 @@ repeat:
 	if obj == nil {
 		log.Fatalf("no type information for identifier %q at %d", identX.Name, *offset)
 	}
+
+	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
+		// Struct literal
+		if lit, ok := nodes[2].(*ast.CompositeLit); ok {
+			if parent, ok := lit.Type.(*ast.SelectorExpr); ok {
+				fmt.Println(obj.Pkg().Path(), parent.Sel, obj.Id())
+				return
+			} else if parent, ok := lit.Type.(*ast.Ident); ok {
+				fmt.Println(obj.Pkg().Path(), parent, obj.Id())
+				return
+			}
+		}
+	}
+
 	if pkgName, ok := obj.(*types.PkgName); ok {
 		fmt.Println(pkgName.Imported().Path())
 	} else if selX == nil {
