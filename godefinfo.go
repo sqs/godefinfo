@@ -33,6 +33,7 @@ var (
 
 	cpuprofile  = flag.String("debug.cpuprofile", "", "write CPU profile to this file")
 	repetitions = flag.Int("debug.repetitions", 1, "repeat this many times to generate better profiles")
+	useJSON     = flag.Bool("json", false, "return JSON structured output")
 )
 
 var (
@@ -150,7 +151,7 @@ repeat:
 			if err != nil {
 				log.Fatal(err)
 			}
-			fmt.Println(pkgPath)
+			outputData(pkgPath)
 			return
 		}
 	}
@@ -175,30 +176,30 @@ repeat:
 		case *types.Signature:
 			if t.Recv() == nil {
 				// Top-level func.
-				fmt.Println(objectString(obj))
+				outputData(objectString(obj))
 			} else {
 				// Method or interface method.
-				fmt.Println(obj.Pkg().Path(), dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name(), identX.Name)
+				outputData(obj.Pkg().Path(), dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name(), identX.Name)
 			}
 			return
 		}
 
 		if obj.Parent() == pkg.Scope() {
 			// Top-level package def.
-			fmt.Println(objectString(obj))
+			outputData(objectString(obj))
 			return
 		}
 
 		// Struct field.
 		if _, ok := nodes[1].(*ast.Field); ok {
 			if typ, ok := nodes[4].(*ast.TypeSpec); ok {
-				fmt.Println(obj.Pkg().Path(), typ.Name.Name, obj.Name())
+				outputData(obj.Pkg().Path(), typ.Name.Name, obj.Name())
 				return
 			}
 		}
 
 		if pkg, name, ok := typeName(dereferenceType(obj.Type())); ok {
-			fmt.Println(pkg, name)
+			outputData(pkg, name)
 			return
 		}
 
@@ -215,26 +216,26 @@ repeat:
 		// Struct literal
 		if lit, ok := nodes[2].(*ast.CompositeLit); ok {
 			if parent, ok := lit.Type.(*ast.SelectorExpr); ok {
-				fmt.Println(obj.Pkg().Path(), parent.Sel, obj.Id())
+				outputData(obj.Pkg().Path(), parent.Sel, obj.Id())
 				return
 			} else if parent, ok := lit.Type.(*ast.Ident); ok {
-				fmt.Println(obj.Pkg().Path(), parent, obj.Id())
+				outputData(obj.Pkg().Path(), parent, obj.Id())
 				return
 			}
 		}
 	}
 
 	if pkgName, ok := obj.(*types.PkgName); ok {
-		fmt.Println(pkgName.Imported().Path())
+		outputData(pkgName.Imported().Path())
 	} else if selX == nil {
 		if pkg.Scope().Lookup(identX.Name) == obj {
-			fmt.Println(objectString(obj))
+			outputData(objectString(obj))
 		} else if types.Universe.Lookup(identX.Name) == obj {
-			fmt.Println("builtin", obj.Name())
+			outputData("builtin", obj.Name())
 		} else {
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
-				fmt.Println(pkg, name)
+				outputData(pkg, name)
 				return
 			}
 			log.Fatalf("not a package-level definition (ident: %v, object: %v) and unable to follow type (type: %v)", identX, obj, t)
@@ -251,18 +252,18 @@ repeat:
 			// field invoked, but object is selected
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
-				fmt.Println(pkg, name)
+				outputData(pkg, name)
 				return
 			}
 			log.Fatal("method or field not found")
 		}
 
-		fmt.Println(objectString(recv.Obj()), identX.Name)
+		outputData(objectString(recv.Obj()), identX.Name)
 	} else {
 		// Qualified reference (to another package's top-level
 		// definition).
 		if obj := info.Uses[selX.Sel]; obj != nil {
-			fmt.Println(objectString(obj))
+			outputData(objectString(obj))
 		} else {
 			log.Fatal("no selector type")
 		}
