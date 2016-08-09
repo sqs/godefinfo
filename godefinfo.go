@@ -67,8 +67,6 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-repeat:
-	fset = token.NewFileSet()
 
 	if *debug {
 		dlog = log.New(os.Stderr, "[debug] ", 0)
@@ -86,6 +84,13 @@ repeat:
 		}
 	}
 
+	for i := 0; i < *repetitions; i++ {
+		FindDefInfo(src)
+	}
+}
+
+func FindDefInfo(src []byte) {
+	fset = token.NewFileSet()
 	pkgFiles, err := parsePackage(*filename, src)
 	if err != nil {
 		log.Fatal(err)
@@ -264,10 +269,5 @@ repeat:
 		} else {
 			log.Fatal("no selector type")
 		}
-	}
-
-	if *repetitions > 1 {
-		*repetitions--
-		goto repeat
 	}
 }
