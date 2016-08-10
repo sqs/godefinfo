@@ -84,12 +84,21 @@ func main() {
 		}
 	}
 
+	var output string
 	for i := 0; i < *repetitions; i++ {
-		FindDefInfo(src)
+		output = Build(src)
 	}
+	info := stringToDefInfo(output)
+
+	if !*useJSON {
+		fmt.Println(info)
+		return
+	}
+
+	printStructured(info)
 }
 
-func FindDefInfo(src []byte) {
+func Build(src []byte) string {
 	fset = token.NewFileSet()
 	pkgFiles, err := parsePackage(*filename, src)
 	if err != nil {
@@ -153,11 +162,14 @@ func FindDefInfo(src []byte) {
 			if err != nil {
 				log.Fatal(err)
 			}
-			outputData(pkgPath)
-			return
+			return outputData(pkgPath)
 		}
 	}
 
+	return FindDefInfo(info, nodes, pkg)
+}
+
+func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) string {
 	var identX *ast.Ident
 	var selX *ast.SelectorExpr
 	selX, ok := nodes[0].(*ast.SelectorExpr)
@@ -178,35 +190,30 @@ func FindDefInfo(src []byte) {
 		case *types.Signature:
 			if t.Recv() == nil {
 				// Top-level func.
-				outputData(objectString(obj))
+				return outputData(objectString(obj))
 			} else {
 				// Method or interface method.
-				outputData(obj.Pkg().Path(), dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name(), identX.Name)
+				return outputData(obj.Pkg().Path(), dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name(), identX.Name)
 			}
-			return
 		}
 
 		if obj.Parent() == pkg.Scope() {
 			// Top-level package def.
-			outputData(objectString(obj))
-			return
+			return outputData(objectString(obj))
 		}
 
 		// Struct field.
 		if _, ok := nodes[1].(*ast.Field); ok {
 			if typ, ok := nodes[4].(*ast.TypeSpec); ok {
-				outputData(obj.Pkg().Path(), typ.Name.Name, obj.Name())
-				return
+				return outputData(obj.Pkg().Path(), typ.Name.Name, obj.Name())
 			}
 		}
 
 		if pkg, name, ok := typeName(dereferenceType(obj.Type())); ok {
-			outputData(pkg, name)
-			return
+			return outputData(pkg, name)
 		}
 
 		log.Fatalf("unable to identify def (ident: %v, object: %v)", identX, obj)
-		return
 	}
 
 	obj := info.Uses[identX]
@@ -218,30 +225,26 @@ func FindDefInfo(src []byte) {
 		// Struct literal
 		if lit, ok := nodes[2].(*ast.CompositeLit); ok {
 			if parent, ok := lit.Type.(*ast.SelectorExpr); ok {
-				outputData(obj.Pkg().Path(), parent.Sel, obj.Id())
-				return
+				return outputData(obj.Pkg().Path(), parent.Sel, obj.Id())
 			} else if parent, ok := lit.Type.(*ast.Ident); ok {
-				outputData(obj.Pkg().Path(), parent, obj.Id())
-				return
+				return outputData(obj.Pkg().Path(), parent, obj.Id())
 			}
 		}
 	}
 
 	if pkgName, ok := obj.(*types.PkgName); ok {
-		outputData(pkgName.Imported().Path())
+		return outputData(pkgName.Imported().Path())
 	} else if selX == nil {
 		if pkg.Scope().Lookup(identX.Name) == obj {
-			outputData(objectString(obj))
+			return outputData(objectString(obj))
 		} else if types.Universe.Lookup(identX.Name) == obj {
-			outputData("builtin", obj.Name())
+			return outputData("builtin", obj.Name())
 		} else {
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
-				outputData(pkg, name)
-				return
+				return outputData(pkg, name)
 			}
 			log.Fatalf("not a package-level definition (ident: %v, object: %v) and unable to follow type (type: %v)", identX, obj, t)
-			return
 		}
 	} else if sel, ok := info.Selections[selX]; ok {
 		recv, ok := dereferenceType(deepRecvType(sel)).(*types.Named)
@@ -254,20 +257,20 @@ func FindDefInfo(src []byte) {
 			// field invoked, but object is selected
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
-				outputData(pkg, name)
-				return
+				return outputData(pkg, name)
 			}
 			log.Fatal("method or field not found")
 		}
 
-		outputData(objectString(recv.Obj()), identX.Name)
+		return outputData(objectString(recv.Obj()), identX.Name)
 	} else {
 		// Qualified reference (to another package's top-level
 		// definition).
 		if obj := info.Uses[selX.Sel]; obj != nil {
-			outputData(objectString(obj))
+			return outputData(objectString(obj))
 		} else {
 			log.Fatal("no selector type")
 		}
 	}
+	return ""
 }
