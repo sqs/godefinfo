@@ -194,7 +194,6 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 				return definfo
 			} else {
 				// Method or interface method.
-				// return outputData(obj.Pkg().Path(), dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name(), identX.Name)
 				definfo.Container = dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name()
 				definfo.Name = identX.Name
 				return definfo
@@ -203,14 +202,12 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 
 		if obj.Parent() == pkg.Scope() {
 			// Top-level package def.
-			// return outputData(objectString(obj))
 			return objectInfo(obj)
 		}
 
 		// Struct field.
 		if _, ok := nodes[1].(*ast.Field); ok {
 			if typ, ok := nodes[4].(*ast.TypeSpec); ok {
-				// return outputData(obj.Pkg().Path(), typ.Name.Name, obj.Name())
 				definfo.Container = typ.Name.Name
 				definfo.Name = obj.Name()
 				return definfo
@@ -218,7 +215,6 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 		}
 
 		if pkg, name, ok := typeName(dereferenceType(obj.Type())); ok {
-			// return outputData(pkg, name)
 			definfo.Package = pkg
 			definfo.Name = name
 			return definfo
@@ -238,10 +234,8 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 			definfo.Package = obj.Pkg().Path()
 			definfo.Name = obj.Id()
 			if parent, ok := lit.Type.(*ast.SelectorExpr); ok {
-				// return outputData(obj.Pkg().Path(), parent.Sel, obj.Id())
 				definfo.Container = fmt.Sprint(parent.Sel)
 			} else if parent, ok := lit.Type.(*ast.Ident); ok {
-				// return outputData(obj.Pkg().Path(), parent, obj.Id())
 				definfo.Container = fmt.Sprint(parent)
 			}
 			return definfo
@@ -255,14 +249,12 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 		if pkg.Scope().Lookup(identX.Name) == obj {
 			return objectInfo(obj)
 		} else if types.Universe.Lookup(identX.Name) == obj {
-			// return outputData("builtin", obj.Name())
 			definfo.Name = obj.Name()
 			definfo.Package = "builtin"
 			return definfo
 		} else {
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
-				// return outputData(pkg, name)
 				definfo.Package = pkg
 				definfo.Name = name
 				return definfo
@@ -280,7 +272,6 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 			// field invoked, but object is selected
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
-				// return outputData(pkg, name)
 				definfo.Package = pkg
 				definfo.Name = name
 				return definfo
@@ -288,7 +279,6 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 			log.Fatal("method or field not found")
 		}
 
-		// return outputData(objectString(recv.Obj()), identX.Name)
 		definfo.Package = fmt.Sprint(recv.Obj().Pkg().Path())
 		definfo.Container = recv.Obj().Name()
 		definfo.Name = identX.Name
@@ -297,7 +287,6 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 		// Qualified reference (to another package's top-level
 		// definition).
 		if obj := info.Uses[selX.Sel]; obj != nil {
-			// return outputData(objectString(obj))
 			return objectInfo(obj)
 		} else {
 			log.Fatal("no selector type")
