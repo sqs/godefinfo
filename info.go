@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"go/types"
 	"log"
 	"os"
 	"strings"
@@ -54,4 +55,11 @@ func printStructured(info defInfo) {
 		log.Fatal(err)
 	}
 	os.Stdout.Write(bytes)
+}
+
+func objectInfo(obj types.Object) defInfo {
+	return defInfo{
+		Name:    obj.Name(),
+		Package: obj.Pkg().Path(),
+	}
 }
