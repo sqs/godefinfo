@@ -95,6 +95,7 @@ func dereferenceType(typ types.Type) types.Type {
 }
 
 func typeName(typ types.Type) (pkg, name string, ok bool) {
+	//TODO Don't just bail on composite types.
 	switch typ := typ.(type) {
 	case *types.Named:
 		return typ.Obj().Pkg().Path(), typ.Obj().Name(), true

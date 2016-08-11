@@ -96,6 +96,8 @@ func main() {
 	printStructured(info)
 }
 
+// This is an importing step. It deals with files, archives and file paths.
+// corresponding go package: go/build
 func Build(src []byte) defInfo {
 	fset = token.NewFileSet()
 	pkgFiles, err := parsePackage(*filename, src)
@@ -113,17 +115,22 @@ func Build(src []byte) defInfo {
 	}
 
 	if *gobuild {
-		t1 := time.Now()
-		if importPath != "" {
-			// Generates the .a files that the importer.Default() must
-			// have to import other packages.
-			if err := exec.Command("go", "build", "-i", importPath).Run(); err != nil {
-				dlog.Println("go build:", err)
-			}
-			dlog.Println("go build took", time.Since(t1))
-		}
+		buildPackage(importPath)
 	}
+	info, err := Analyze(importPath, pkgFiles)
+	if err != nil {
+		buildPackage(importPath)
+		info, err = Analyze(importPath, pkgFiles)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	return info
+}
 
+// This is a lexical analysis step. It deals with filesets, ASTs and package import paths.
+// corresponding go package: go/types
+func Analyze(importPath string, pkgFiles []*ast.File) (defInfo, error) {
 	if importPath == "" || importPath == "." {
 		importPath = pkgFiles[0].Name.Name
 	}
@@ -153,7 +160,10 @@ func Build(src []byte) defInfo {
 	return FindDefInfo(info, nodes, pkg)
 }
 
-func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo {
+var ErrNotFound = fmt.Errorf("no identifier found")
+
+// Given go information we need, find the type information we want.
+func notwithstanding FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) (defInfo, error) {
 	definfo := defInfo{}
 
 	// Handle import statements.
@@ -164,10 +174,10 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 		if im, ok := nodes[1].(*ast.ImportSpec); ok {
 			pkgPath, err := strconv.Unquote(im.Path.Value)
 			if err != nil {
-				log.Fatal(err)
+				return definfo, ErrNotFound
 			}
 			definfo.Package = pkgPath
-			return definfo
+			return definfo, nil
 		}
 	}
 
@@ -179,7 +189,7 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 	} else {
 		identX, ok = nodes[0].(*ast.Ident)
 		if !ok {
-			log.Fatal("no identifier found")
+			return definfo, ErrNotFound
 		}
 		if len(nodes) > 1 {
 			selX, _ = nodes[1].(*ast.SelectorExpr)
@@ -191,18 +201,18 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 		case *types.Signature:
 			if t.Recv() == nil {
 				definfo.Name = obj.Name()
-				return definfo
+				return definfo, nil
 			} else {
 				// Method or interface method.
 				definfo.Container = dereferenceType(t.Recv().Type()).(*types.Named).Obj().Name()
 				definfo.Name = identX.Name
-				return definfo
+				return definfo, nil
 			}
 		}
 
 		if obj.Parent() == pkg.Scope() {
 			// Top-level package def.
-			return objectInfo(obj)
+			return objectInfo(obj), nil
 		}
 
 		// Struct field.
@@ -210,22 +220,22 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 			if typ, ok := nodes[4].(*ast.TypeSpec); ok {
 				definfo.Container = typ.Name.Name
 				definfo.Name = obj.Name()
-				return definfo
+				return definfo, nil
 			}
 		}
 
 		if pkg, name, ok := typeName(dereferenceType(obj.Type())); ok {
 			definfo.Package = pkg
 			definfo.Name = name
-			return definfo
+			return definfo, nil
 		}
 
-		log.Fatalf("unable to identify def (ident: %v, object: %v)", identX, obj)
+		return definfo, ErrNotFound
 	}
 
 	obj := info.Uses[identX]
 	if obj == nil {
-		log.Fatalf("no type information for identifier %q at %d", identX.Name, *offset)
+		return definfo, ErrNotFound
 	}
 
 	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
@@ -238,33 +248,33 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 			} else if parent, ok := lit.Type.(*ast.Ident); ok {
 				definfo.Container = fmt.Sprint(parent)
 			}
-			return definfo
+			return definfo, nil
 		}
 	}
 
 	if pkgName, ok := obj.(*types.PkgName); ok {
 		definfo.Package = pkgName.Imported().Path()
-		return definfo
+		return definfo, nil
 	} else if selX == nil {
 		if pkg.Scope().Lookup(identX.Name) == obj {
-			return objectInfo(obj)
+			return objectInfo(obj), nil
 		} else if types.Universe.Lookup(identX.Name) == obj {
 			definfo.Name = obj.Name()
 			definfo.Package = "builtin"
-			return definfo
+			return definfo, nil
 		} else {
 			t := dereferenceType(obj.Type())
 			if pkg, name, ok := typeName(t); ok {
 				definfo.Package = pkg
 				definfo.Name = name
-				return definfo
+				return definfo, nil
 			}
-			log.Fatalf("not a package-level definition (ident: %v, object: %v) and unable to follow type (type: %v)", identX, obj, t)
+			return objectInfo(obj), nil
 		}
 	} else if sel, ok := info.Selections[selX]; ok {
 		recv, ok := dereferenceType(deepRecvType(sel)).(*types.Named)
 		if !ok || recv == nil || recv.Obj() == nil || recv.Obj().Pkg() == nil || recv.Obj().Pkg().Scope().Lookup(recv.Obj().Name()) != recv.Obj() {
-			log.Fatal("receiver is not a top-level named type")
+			return definfo, ErrNotFound
 		}
 
 		field, _, _ := types.LookupFieldOrMethod(sel.Recv(), true, pkg, identX.Name)
@@ -274,23 +284,35 @@ func FindDefInfo(info types.Info, nodes []ast.Node, pkg *types.Package) defInfo 
 			if pkg, name, ok := typeName(t); ok {
 				definfo.Package = pkg
 				definfo.Name = name
-				return definfo
+				return definfo, nil
 			}
-			log.Fatal("method or field not found")
+			return definfo, ErrNotFound
 		}
 
 		definfo.Package = fmt.Sprint(recv.Obj().Pkg().Path())
 		definfo.Container = recv.Obj().Name()
 		definfo.Name = identX.Name
-		return definfo
+		return definfo, nil
 	} else {
 		// Qualified reference (to another package's top-level
 		// definition).
 		if obj := info.Uses[selX.Sel]; obj != nil {
-			return objectInfo(obj)
+			return objectInfo(obj), nil
 		} else {
-			log.Fatal("no selector type")
+			return definfo, ErrNotFound
 		}
 	}
-	return definfo
+	return definfo, nil
+}
+
+func buildPackage(importPath string) {
+	t1 := time.Now()
+	if importPath != "" {
+		// Generates the .a files that the importer.Default() must
+		// have to import other packages.
+		if err := exec.Command("go", "build", "-i", importPath).Run(); err != nil {
+			dlog.Println("go build:", err)
+		}
+		dlog.Println("go build took", time.Since(t1))
+	}
 }
