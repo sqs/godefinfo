@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"go/types"
 	"log"
 	"os"
 	"strings"
@@ -20,16 +21,19 @@ type defInfo struct {
 	IsGoRepoPath bool
 }
 
-func outputData(data ...interface{}) {
+func outputData(data ...interface{}) string {
 	output := fmt.Sprintln(data...)
-	if !*useJSON {
-		fmt.Print(output)
-		return
-	}
-	printStructured(output)
+	return output
 }
 
-func printStructured(output string) {
+func (i defInfo) String() string {
+	if i.Container == "" {
+		return fmt.Sprintf("%s %s", i.Package, i.Name)
+	}
+	return fmt.Sprintf("%s %s %s", i.Package, i.Container, i.Name)
+}
+
+func stringToDefInfo(output string) defInfo {
 	datas := strings.Split(strings.Trim(output, "\n"), " ")
 	info := defInfo{}
 	if len(datas) > 0 {
@@ -41,10 +45,21 @@ func printStructured(output string) {
 	} else if len(datas) > 1 {
 		info.Name = datas[1]
 	}
+	return info
+}
+
+func printStructured(info defInfo) {
 	info.IsGoRepoPath = isGoRepoPath(info.Package)
 	bytes, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {
 		log.Fatal(err)
 	}
 	os.Stdout.Write(bytes)
+}
+
+func objectInfo(obj types.Object) defInfo {
+	return defInfo{
+		Name:    obj.Name(),
+		Package: obj.Pkg().Path(),
+	}
 }
